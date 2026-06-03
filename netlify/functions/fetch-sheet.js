@@ -1,5 +1,5 @@
 exports.handler = async (event) => {
-  const url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsx-VKKgmse7rTZjdmjzKYNRV69ppN8u9h0hi4qxgdMqKnxYclU5tqDeOdZjtBnX1dwXdKVlkl_lDn/pub?gid=878640986&single=true&output=csv';
+  const url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsx-VKKgmse7rTZjdmjzKYNRV69ppN8u9h0hi4qxgdMqKnxYcIU5tqDeOdZjtBnX1dwXdKVlkl_lDn/pub?gid=878640986&single=true&output=csv';
 
   try {
     const response = await fetch(url, {
