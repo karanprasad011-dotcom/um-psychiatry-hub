@@ -1,46 +1,38 @@
-const https = require('https');
-const http = require('http');
-
-const SHEET_ID = '1GiFPK8xNSOZ0jMuBfOVA17Tch8NvZAduI3np1T1EtMI';
-const GID = '878640986';
-
 exports.handler = async (event) => {
-  // Use the published CSV URL instead of export
-  const url = `https://docs.google.com/spreadsheets/d/e/2PACX-1vSsx-VKKgmse7rTZjdmjzKYNRV69ppN8u9h0hi4qxgdMqKnxYclU5tqDeOdZjtBnX1dwXdKVlkl_lDn/pub?gid=${GID}&single=true&output=csv`;
-
-  const fetchUrl = (targetUrl, redirectCount = 0) => {
-    return new Promise((resolve, reject) => {
-      if (redirectCount > 10) return reject(new Error('Too many redirects'));
-      const client = targetUrl.startsWith('https') ? https : http;
-      const req = client.get(targetUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)',
-          'Accept': 'text/html,text/csv,*/*',
-        }
-      }, (res) => {
-        if ([301,302,303,307,308].includes(res.statusCode)) {
-          return resolve(fetchUrl(res.headers.location, redirectCount + 1));
-        }
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => resolve({ status: res.statusCode, data }));
-        res.on('error', reject);
-      });
-      req.on('error', reject);
-    });
-  };
+  const url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsx-VKKgmse7rTZjdmjzKYNRV69ppN8u9h0hi4qxgdMqKnxYclU5tqDeOdZjtBnX1dwXdKVlkl_lDn/pub?gid=878640986&single=true&output=csv';
 
   try {
-    const result = await fetchUrl(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'curl/7.68.0',
+        'Accept': 'text/csv, text/plain, */*',
+      },
+      redirect: 'follow',
+    });
+
+    const text = await response.text();
+
+    if (text.trim().startsWith('<')) {
+      return { 
+        statusCode: 200,
+        headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Got HTML', status: response.status, preview: text.substring(0, 200) })
+      };
+    }
+
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'text/csv',
         'Access-Control-Allow-Origin': '*',
       },
-      body: result.data || 'empty',
+      body: text,
     };
   } catch (err) {
-    return { statusCode: 500, body: `Error: ${err.message}` };
+    return { 
+      statusCode: 500, 
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: `Error: ${err.message}` 
+    };
   }
 };
