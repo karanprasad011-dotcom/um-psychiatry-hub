@@ -197,17 +197,9 @@
 
   <script>
     const SHEET_URL_KEY = 'um_psych_sheet_url';
-    const HARDCODED_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsx-VKKgmse7rTZjdmjzKYNRV69ppN8u9h0hi4qxgdMqKnxYclU5tqDeOdZjtBnX1dwXdKVlkl_lDn/pub?gid=878640986&single=true&output=csv';
-    const HARDCODED_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsx-VKKgmse7rTZjdmjzKYNRV69ppN8u9h0hi4qxgdMqKnxYclU5tqDeOdZjtBnX1dwXdKVlkl_lDn/pub?gid=878640986&single=true&output=csv';
     let allProjects = [];
 
     async function loadProjects() {
-      const sheetUrl = localStorage.getItem(SHEET_URL_KEY) || HARDCODED_SHEET_URL;
-      if (!sheetUrl) {
-        renderProjects([]);
-        document.getElementById('filter-count').textContent = 'Connect a Google Sheet in Admin to show projects';
-        return;
-      }
       try {
         const res = await fetch('/.netlify/functions/fetch-sheet?tab=projects');
         const text = await res.text();
