@@ -1,70 +1,143 @@
-const { getStore } = require("@netlify/blobs");
+const https = require('https');
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "umpsych2026";
+const BASE_ID = process.env.AIRTABLE_BASE_ID || 'appVpFZgycFM6Seat';
+const TABLE_IDS = {
+  projects:  'tblcGVrdBixm2RIep',
+  calendar:  'tblSF0AU4vD8KgfEq',
+};
+
+function airtableRequest(options, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const url = new URL(res.headers.location);
+          const redirectOptions = {
+            hostname: url.hostname,
+            path: url.pathname + url.search,
+            method: options.method,
+            headers: options.headers
+          };
+          resolve(airtableRequest(redirectOptions, body));
+        } else {
+          resolve({ statusCode: res.statusCode, body: data });
+        }
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
 
 exports.handler = async (event) => {
+  const token = process.env.AIRTABLE_TOKEN;
+  const tableParam = (event.queryStringParameters?.table || 'projects').toLowerCase();
+  const tableId = TABLE_IDS[tableParam];
+
+  if (!tableId) {
+    return {
+      statusCode: 400,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ error: `Unknown table: ${tableParam}` })
+    };
+  }
+
   const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Content-Type": "application/json",
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
   };
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: "" };
+  // GET — fetch all records
+  if (event.httpMethod === 'GET' && !event.queryStringParameters?.id) {
+    const options = {
+      hostname: 'api.airtable.com',
+      path: `/v0/${BASE_ID}/${tableId}?maxRecords=100`,
+      method: 'GET',
+      headers
+    };
+    const result = await airtableRequest(options, null);
+    return {
+      statusCode: result.statusCode,
+      headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+      body: result.body
+    };
   }
 
-  // GET - fetch all projects
-  if (event.httpMethod === "GET") {
-    try {
-      const store = getStore("projects");
-      const { blobs } = await store.list();
-      const projects = await Promise.all(
-        blobs.map(async ({ key }) => {
-          const data = await store.get(key, { type: "json" });
-          return data;
-        })
-      );
-      projects.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      return { statusCode: 200, headers, body: JSON.stringify(projects) };
-    } catch (err) {
-      return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
-    }
+  // GET single record by id
+  if (event.httpMethod === 'GET' && event.queryStringParameters?.id) {
+    const recordId = event.queryStringParameters.id;
+    const options = {
+      hostname: 'api.airtable.com',
+      path: `/v0/${BASE_ID}/${tableId}/${recordId}`,
+      method: 'GET',
+      headers
+    };
+    const result = await airtableRequest(options, null);
+    return {
+      statusCode: result.statusCode,
+      headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+      body: result.body
+    };
   }
 
-  // POST - save or delete
-  if (event.httpMethod === "POST") {
-    try {
-      const body = JSON.parse(event.body);
-      const { password, action, project, id } = body;
-
-      if (password !== ADMIN_PASSWORD) {
-        return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized" }) };
-      }
-
-      const store = getStore("projects");
-
-      if (action === "save") {
-        const now = new Date().toISOString();
-        const saved = {
-          ...project,
-          id: project.id || `proj_${Date.now()}`,
-          createdAt: project.createdAt || now,
-          updatedAt: now,
-        };
-        await store.setJSON(saved.id, saved);
-        return { statusCode: 200, headers, body: JSON.stringify({ success: true, project: saved }) };
-      }
-
-      if (action === "delete") {
-        await store.delete(id);
-        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
-      }
-
-      return { statusCode: 400, headers, body: JSON.stringify({ error: "Unknown action" }) };
-    } catch (err) {
-      return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
-    }
+  // POST — create record
+  if (event.httpMethod === 'POST') {
+    const body = JSON.stringify({ fields: JSON.parse(event.body) });
+    const options = {
+      hostname: 'api.airtable.com',
+      path: `/v0/${BASE_ID}/${tableId}`,
+      method: 'POST',
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }
+    };
+    const result = await airtableRequest(options, body);
+    return {
+      statusCode: result.statusCode,
+      headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+      body: result.body
+    };
   }
 
-  return { statusCode: 405, headers, body: JSON.stringify({ error: "Method not allowed" }) };
+  // PATCH — update record
+  if (event.httpMethod === 'PATCH') {
+    const { id, ...fields } = JSON.parse(event.body);
+    const body = JSON.stringify({ fields });
+    const options = {
+      hostname: 'api.airtable.com',
+      path: `/v0/${BASE_ID}/${tableId}/${id}`,
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }
+    };
+    const result = await airtableRequest(options, body);
+    return {
+      statusCode: result.statusCode,
+      headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+      body: result.body
+    };
+  }
+
+  // DELETE — delete record
+  if (event.httpMethod === 'DELETE') {
+    const recordId = event.queryStringParameters?.id;
+    const options = {
+      hostname: 'api.airtable.com',
+      path: `/v0/${BASE_ID}/${tableId}/${recordId}`,
+      method: 'DELETE',
+      headers
+    };
+    const result = await airtableRequest(options, null);
+    return {
+      statusCode: result.statusCode,
+      headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+      body: result.body
+    };
+  }
+
+  return {
+    statusCode: 405,
+    headers: { 'Access-Control-Allow-Origin': '*' },
+    body: JSON.stringify({ error: 'Method not allowed' })
+  };
 };
